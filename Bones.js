@@ -5,23 +5,23 @@ Bones = (function () {
 			var constructor = Bones.Controller
 			var controller = new constructor(pane)
 
-			if (descriptor.attributes) {
-				if (descriptor.attributes.orientation) {
-					controller.orientation = descriptor.attributes.orientation
+			if (descriptor.properties) {
+				if (descriptor.properties.orientation) {
+					controller.orientation = descriptor.properties.orientation
 				}
 
-				if (descriptor.attributes.swipe) {
-					controller.swipe = descriptor.attributes.swipe
+				if (descriptor.properties.swipe) {
+					controller.swipe = descriptor.properties.swipe
 				}
-				if (descriptor.attributes.children) {
-					descriptor.attributes.children.forEach(function (descriptor) {
+				if (descriptor.properties.children) {
+					descriptor.properties.children.forEach(function (descriptor) {
 						controller.add(Bones.build(descriptor))
 					})
 				}
 			}
 
 			for (var property in descriptor) {
-				if (descriptor.hasOwnProperty(property) && property !== 'attributes') {
+				if (descriptor.hasOwnProperty(property) && property !== 'properties') {
 					controller[property] = descriptor[property]
 				}
 			}
@@ -35,11 +35,13 @@ Bones = (function () {
 			return pane
 		},
 
+		threshold: 80,
+
 		Controller: (function () {
 
 			function slide(controller) {
 				if (controller.orientation === 'horizontal') {
-					controller.pane.style.transform = 'translate3d(-' + (controller._current * 100) + '%, 0)'
+					controller.pane.style.transform = 'translate(-' + (controller._current * 100) + '%, 0)'
 				} else {
 					controller.pane.style.transform = 'translate(0, -' + (controller._current * 100) + '%)'
 				}
@@ -47,54 +49,90 @@ Bones = (function () {
 
 			function arrange(controller) {
 				var horizontal = controller.orientation === 'horizontal'
-				var start = -controller._current * 100
-				console.log(controller)
 				controller.children.forEach(function (child, index) {
-					child.pane.style[horizontal ? 'left' : 'top'] = '' + (start + index * 100) + '%'
+					child.pane.style[horizontal ? 'left' : 'top'] = '' + (index * 100) + '%'
 				})
 			}
 
-			function enableSwipe(controller) {
+			function enableSwiping(controller) {
 				var pane = controller.pane
 				var horizontal = controller.orientation === 'horizontal'
-				var pos1, pos2
+				var x1, y1, x2, y2
+				var allowed = undefined // Is handling the current gesture allowed?
+				var capture = undefined // Is this controller handling the current gesture?
+
+				function resetState() {
+					arrange(controller)
+					pos1 = undefined
+					pos2 = undefined
+					allowed = undefined
+					capture = undefined
+				}
 
 				pane.addEventListener('touchstart', function (e) {
 					if (e.touches.length > 1) {
-						pos1 = undefined
+						resetState()
 					} else {
-						pos1 = horizontal ? e.pageX : e.pageY
+						if (allowed === undefined) {
+							allowed = controller.trigger('browse').isCancelled() ? false : true
+						}
+						if (allowed) {
+							x1 = e.pageX
+							y1 = e.pageY
+							pane.style.transitionDuration = '0s'
+						}
 					}
 				})
 				pane.addEventListener('touchmove', function (e) {
-					if (e.touches.length === 1) {
-						e.preventDefault()
+					if (allowed) {
+						x2 = e.pageX
+						y2 = e.pageY
+						if (capture === undefined) {
+							if (horizontal) {
+								capture = Math.abs(x1 - x2) > Math.abs(y1 - y2) ? true : false
+							} else {
+								capture = Math.abs(y1 - y2) > Math.abs(x1 - x2) ? true : false
+							}
+						}
+						if (capture) {
+							e.preventDefault()
+							e.stopPropagation()
+							if (horizontal) {
+								pane.style.transform = 'translate(' + (((x2 - x1) / pane.offsetWidth - controller._current) * 100) + '%, 0)'
+							} else {
+								pane.style.transform = 'translate(0, ' + (((y2 - y1) / pane.offsetHeight - controller._current) * 100) + '%)'
+							}
+						}
 					}
 				})
 				pane.addEventListener('touchend', function (e) {
-					if (typeof pos1 !== 'undefined' && !e.defaultPrevented) {
-						pos2 = horizontal ? e.pageX : e.pageY
-
-						if (Math.abs(pos1 - pos2) > 30) {
-							if (pos1 > pos2) {
-								if (!controller.trigger('next').isCancelled()) {
-									controller.next()
-								}
+					if (capture) {
+						pane.style.transitionDuration = null
+						var pos1, pos2
+						if (horizontal) {
+							pos1 = x1
+							pos2 = x2
+						} else {
+							pos1 = y1
+							pos2 = y2
+						}
+						if (Math.abs(pos1 - pos2) > Bones.threshold) {
+							if (pos1 > pos2 && controller.hasNext() && !controller.trigger('next').isCancelled()) {
+								controller.next()
+							} else if (pos1 < pos2 && controller.hasPrevious() && !controller.trigger('previous').isCancelled()) {
+								controller.previous()
 							} else {
-								if (!controller.trigger('previous').isCancelled()) {
-									controller.previous()
-								}
+								slide(controller)
 							}
-							// Let the event bubble up so the parent can reset its state.
-							e.preventDefault();
+						} else {
+							slide(controller)
 						}
 					}
-					pos1 = undefined
-					pos2 = undefined
+					resetState()
 				})
 			}
 
-			var Controller = function (pane) {
+			var Controller = function (pane, properties) {
 				this._pane = pane
 				this._parent = null
 				this._children = []
@@ -122,7 +160,7 @@ Bones = (function () {
 				set swipe(value) {
 					this._swipe = !!value
 					if (this._swipe) {
-						enableSwipe(this)
+						enableSwiping(this)
 					}
 				},
 				get orientation() {
@@ -155,16 +193,22 @@ Bones = (function () {
 					})
 				},
 				next: function () {
-					if (this._current < this.children.length - 1) {
+					if (this.hasNext()) {
 						this._current += 1
 						slide(this)
 					}
 				},
+				hasNext: function () {
+					return this._current < this.children.length - 1
+				},
 				previous: function () {
-					if (this._current > 0) {
+					if (this.hasPrevious()) {
 						this._current -= 1
 						slide(this)
 					}
+				},
+				hasPrevious: function () {
+					return this._current > 0
 				},
 				first: function () {
 					this._current = 0
