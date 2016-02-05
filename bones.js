@@ -633,6 +633,10 @@
 						} else {
 							capture = Math.abs(dy) > Math.abs(dx)
 						}
+						if (!capture) {
+							// The user swipes in the direction that is not supported. Trigger the swipecancel event.
+							controller.trigger('swipecancel', {cancelable: false})
+						}
 					}
 					if (capture) {
 						distance = horizontal ? dx : dy
@@ -673,7 +677,7 @@
 				}
 			})
 			pane.addEventListener('touchend', function (e) {
-				if (capture) {
+				if (allowed) {
 					controller.currentChild.pane.style.transitionDuration = null
 					if (controller.hasNext) {
 						controller.nextChild.pane.style.transitionDuration = null
@@ -681,19 +685,21 @@
 					if (controller.hasPrevious) {
 						controller.previousChild.pane.style.transitionDuration = null
 					}
-					var distance = horizontal ? x2 - x1 : y2 - y1
-					if (Math.abs(distance) > controller.threshold) {
-						if (distance < 0 && controller.hasNext) {
-							controller.trigger('swipeend', {cancelable: false, detail: {distance: distance}})
-							controller.next()
-						} else if (distance > 0 && controller.hasPrevious) {
-							controller.trigger('swipeend', {cancelable: false, detail: {distance: distance}})
-							controller.previous()
+					if (capture) {
+						var distance = horizontal ? x2 - x1 : y2 - y1
+						if (Math.abs(distance) > controller.threshold) {
+							if (distance < 0 && controller.hasNext) {
+								controller.trigger('swipeend', {cancelable: false, detail: {distance: distance}})
+								controller.next()
+							} else if (distance > 0 && controller.hasPrevious) {
+								controller.trigger('swipeend', {cancelable: false, detail: {distance: distance}})
+								controller.previous()
+							} else {
+								controller.trigger('swipecancel', {cancelable: false})
+							}
 						} else {
 							controller.trigger('swipecancel', {cancelable: false})
 						}
-					} else {
-						controller.trigger('swipecancel', {cancelable: false})
 					}
 				}
 				resetState()
