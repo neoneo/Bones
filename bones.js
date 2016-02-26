@@ -431,6 +431,7 @@
 		function StackController(pane, properties) {
 			Bones.Controller.call(this, pane, properties)
 			this._children = []
+			this._namedChildren = {}
 			this._orientation = properties.orientation || 'horizontal'
 			this._swipe = properties.swipe || false
 			this._overflow = properties.overflow || 'spring' // What to do if the user swipes past the first or last pane? 'spring', 'propagate' or 'none'
@@ -492,25 +493,52 @@
 			},
 			/**
 			 * Appends the controller to the end of the stack.
+			 * The name argument is optional, and
 			 */
-			append: function (controller) {
+			append: function (controller, name) {
 				controller.parent = this
 				this.pane.appendChild(controller.pane)
 				this._children.push(controller)
 				arrange(this)
+				if (name && !this._namedChildren[name]) {
+					this._namedChildren[name] = controller
+				}
 			},
 			/**
 			 * Prepends the controller to the stack.
 			 */
-			prepend: function (controller) {
+			prepend: function (controller, name) {
 				if (!this.children.length) {
-					this.append(controller)
+					this.append(controller, name)
 				} else {
 					controller.parent = this
 					this.pane.insertBefore(controller.pane, this.children[0].pane)
 					this._children.unshift(controller)
 					this._currentIndex += 1
 					arrange(this)
+					if (name && !this._namedChildren[name]) {
+						this._namedChildren[name] = controller
+					}
+				}
+			},
+			moveTo: function (name) {
+				var child = this._namedChildren[name]
+				if (child) {
+					var index = this.children.indexOf(child)
+					if (index === this.currentIndex) {
+						return Promise.resolve()
+					} else {
+						var promise
+						while (this.currentIndex < index) {
+							promise = this.next()
+						}
+						while (this.currentIndex > index) {
+							promise = this.previous()
+						}
+						return promise
+					}
+				} else {
+					return Promise.reject()
 				}
 			},
 			remove: function (child) {
@@ -619,15 +647,9 @@
 			var controller = new constructor(pane, descriptor)
 
 			if (descriptor.children) {
-				if (Array.isArray(descriptor.children)) {
-					descriptor.children.forEach(function (descriptor) {
-						controller.append(Bones.build(descriptor))
-					})
-				} else {
-					Object.keys(descriptor.children).forEach(function (name) {
-						controller.add(Bones.build(descriptor.children[name]), name)
-					})
-				}
+				descriptor.children.forEach(function (descriptor) {
+					controller.append(Bones.build(descriptor))
+				})
 			}
 
 			if (descriptor.on) {
