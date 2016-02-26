@@ -7,89 +7,6 @@
 })(this, function () {
 	'use strict'
 
-	// HELPER FUNCTIONS
-
-	/**
-	 * Lets the next or previous pane of the controller slide in, and lets the current pane slide out.
-	 */
-	function slide(controller, next) {
-		var transform = controller.orientation === 'horizontal' ? 'translateX' : 'translateY'
-
-		// The state of the controller has already changed. The current child is the one that is going to slide in.
-		var slidingIn = controller.currentChild
-		var slidingOut // The child that was active previously, but now is going to slide out.
-		slidingIn.pane.style.transform = transform + '(0)'
-
-		var transitioned = false
-		// Check if the controller's state actually changed. If we moved to the next child, then the controller
-		// should have a previous child, and the other way around.
-		if (next && controller.hasPrevious) {
-			transitioned = true
-			slidingOut = controller.previousChild
-			// Slide to the left or top.
-			slidingOut.pane.style.transform = transform + '(-' + controller.translateOut + '%)'
-		} else if (!next && controller.hasNext) {
-			transitioned = true
-			slidingOut = controller.nextChild
-			// Slide to the right or bottom.
-			slidingOut.pane.style.transform = transform + '(100%)'
-		}
-
-		// Trigger events if we transitioned to another child.
-		if (transitioned) {
-			// 1. Trigger the `beforeslide` event on the controller:
-			controller.trigger('beforeslide', {detail: {next: next}, cancelable: false, bubbles: false, trickles: false})
-
-			// 2. Trigger the `beforeslideout` event on the child sliding out:
-			slidingOut.trigger('beforeslideout', {cancelable: false, bubbles: true, trickles: true})
-			slidingOut.pane.addEventListener('transitionend', function translateOut(e) {
-				if (e.propertyName === 'transform') {
-					// 4a. Trigger the `afterslideout` event.
-					slidingOut.trigger('afterslideout', {cancelable: false, bubbles: true, trickles: true})
-					e.target.removeEventListener('transitionend', translateOut)
-				}
-			})
-
-			// 3. Trigger the `beforeslidein` event on the child sliding in:
-			slidingIn.trigger('beforeslidein', {cancelable: false, bubbles: true, trickles: true})
-			slidingIn.pane.addEventListener('transitionend', function translateIn(e) {
-				if (e.propertyName === 'transform') {
-					// 4b. Trigger the `afterslidein` event.
-					currentChild.trigger('afterslidein', {cancelable: false, bubbles: true, trickles: true})
-
-					// 4c. Finally, when the current child's animation is complete, notify the (parent) controller.
-					controller.trigger('afterslide', {detail: {next: next}, cancelable: false, bubbles: false, trickles: false})
-					e.target.removeEventListener('transitionend', translateIn)
-				}
-			})
-		}
-	}
-
-	/**
-	 * (Re-)positions the children of the controller.
-	 */
-	function arrange(controller) {
-		var transform = controller.orientation === 'horizontal' ? 'translateX' : 'translateY'
-		controller.children.forEach(function (child, index) {
-			if (index < controller.currentIndex) {
-				child.pane.style.transform = transform + '(-' + controller.translateOut + '%)'
-			} else if (index > controller.currentIndex) {
-				child.pane.style.transform = transform + '(100%)'
-			} else {
-				child.pane.style.transform = transform + '(0)'
-			}
-		})
-	}
-
-	/**
-	 * Defines the properties on the given prototype.
-	 */
-	function extend(prototype, properties) {
-		Object.keys(properties).forEach(function (name) {
-			Object.defineProperty(prototype, name, Object.getOwnPropertyDescriptor(properties, name))
-		})
-	}
-
 	// Observe insertion and removal of panes and dispatch a custom event so that controllers can listen to
 	// that event on their pane elements.
 	var observer = new MutationObserver(function(records) {
@@ -258,9 +175,9 @@
 			if (event._phase <= Event.TRICKLING_PHASE) {
 				if (event._trickles) {
 					event._phase = Event.TRICKLING_PHASE
-					var childList = controller.childList
-					if (childList && childList.length) {
-						childList.forEach(function (child) {
+					var children = controller.children
+					if (children && children.length) {
+						children.forEach(function (child) {
 							// Let the child handle the event. So this is a depth-first traversal.
 							handleEvent(child, event)
 						})
@@ -297,403 +214,9 @@
 	 */
 	var StackController = (function () {
 		/**
-		 * StackController constructor
-		 * Properties:
-		 * - swipe: boolean, if true, enables swiping between children
-		 * - overflow: string, defines what happens if the user swipes past the first or last child.
-		 * - translateOut: number, defines the number of pixels a child pane slides out (default: Bones.translateOut).
-		 * - threshold: number, defines the number of pixels the user must swipe before a slide is triggered (default: Bones.threshold).
-		 *
-		 * The overflow property can be one of the following: `spring`, `propagate`, or `none`.
-		 * - `spring`: mimicks a spring attached to the pane, so that it lags behind the swipe gesture
-		 * - `propagate`: lets the parent handle the swipe gesture
-		 * - `none`: ignores the swipe gesture
+		 * Enables swiping between children for the controller.
 		 */
-		function StackController(pane, properties) {
-			Bones.Controller.call(this, pane, properties)
-			this._children = []
-			this._orientation = properties.orientation || 'horizontal'
-			this._swipe = properties.swipe || false
-			this._overflow = properties.overflow || 'spring' // What to do if the user swipes past the first or last pane? 'spring', 'propagate' or 'none'
-			this._translateOut = properties.translateOut === undefined ? Bones.translateOut : properties.translateOut
-			this._threshold = properties.threshold === undefined ? Bones.threshold : properties.threshold
-			this._currentIndex = 0
-			if (this._swipe) {
-				Bones.enableSwiping(this)
-			}
-		}
-		StackController.prototype = Object.create(Controller.prototype)
-		StackController.prototype.constructor = StackController
-
-		extend(StackController.prototype, {
-			/**
-			 * Returns the children collection.
-			 */
-			get children() {
-				return this._children
-			},
-			/**
-			 * Returns the children collection as an array.
-			 */
-			get childList() {
-				return this.children
-			},
-			get swipe() {
-				return this._swipe
-			},
-			get orientation() {
-				return this._orientation
-			},
-			get overflow() {
-				return this._overflow
-			},
-			get threshold() {
-				return this._threshold
-			},
-			get translateOut() {
-				return this._translateOut
-			},
-			get currentIndex() {
-				return this._currentIndex
-			},
-			get currentChild() {
-				return this.children[this.currentIndex]
-			},
-			get nextChild() {
-				return this.children[this.currentIndex + 1]
-			},
-			get previousChild() {
-				return this.children[this.currentIndex - 1]
-			},
-			/**
-			 * Appends the controller to the end of the stack.
-			 */
-			append: function (controller) {
-				controller.parent = this
-				this.pane.appendChild(controller.pane)
-				this._children.push(controller)
-				arrange(this)
-			},
-			/**
-			 * Prepends the controller to the stack.
-			 */
-			prepend: function (controller) {
-				if (!this.children.length) {
-					this.append(controller)
-				} else {
-					controller.parent = this
-					this.pane.insertBefore(controller.pane, this.children[0].pane)
-					this._children.unshift(controller)
-					this._currentIndex += 1
-					arrange(this)
-				}
-			},
-			remove: function (child) {
-				var index = this._children.indexOf(child)
-				if (index > -1) {
-					this._children.splice(index, 1)
-					this.pane.removeChild(child.pane)
-					arrange(this)
-				}
-			},
-			next: function () {
-				if (this.hasNext && this.trigger('next')) {
-					this._currentIndex += 1
-					slide(this, true)
-					return this.currentChild
-				}
-				return undefined
-			},
-			get hasNext() {
-				return this._currentIndex < this.children.length - 1
-			},
-			previous: function () {
-				if (this.hasPrevious && this.trigger('previous')) {
-					this._currentIndex -= 1
-					slide(this, false)
-					return this.currentChild
-				}
-				return undefined
-			},
-			get hasPrevious() {
-				return this._currentIndex > 0
-			},
-			render: function () {
-				this.children.forEach(function (child) {
-					child.render()
-				})
-			}
-		})
-
-		return StackController
-	})()
-
-	/**
-	 * BrowseController
-	 * The browse controller contains children accessible by name. The children have no inherent order, so swiping is not implemented.
-	 * Navigation through the children is done programmatically using the `slideIn` and `slideOut` functions.
-	 */
-	var BrowseController = (function () {
-		function BrowseController(pane, properties) {
-			Bones.Controller.call(this, pane, properties)
-			this._children = {}
-			this._currentName = ''
-			this._translateOut = properties.translateOut !== undefined ? properties.translateOut : Bones.translateOut
-		}
-		BrowseController.prototype = Object.create(Controller.prototype)
-		BrowseController.prototype.constructor = BrowseController
-		extend(BrowseController.prototype, {
-			/**
-			 * Returns the child collection.
-			 */
-			get children() {
-				return this._children
-			},
-			/**
-			 * Returns the child collection as an array.
-			 */
-			get childList() {
-				return Object.keys(this.children).map(function (name) {
-					return this.children[name]
-				}, this)
-			},
-			get currentName() {
-				return this._currentName
-			},
-			get currentChild() {
-				return this.children[this.currentName]
-			},
-			get translateOut() {
-				return this._translateOut
-			},
-			add: function (controller, name) {
-				this._children[name] = controller
-				this.pane.appendChild(controller.pane)
-				if (this._currentName === '') {
-					this._currentName = name
-				} else {
-					controller.pane.style.visibility = 'hidden'
-				}
-			},
-			render: function () {
-				Object.keys(this.children).forEach(function (name) {
-					var child = this.children[name]
-					child.render()
-					this.pane.appendChild(child.pane)
-				}, this)
-			},
-			/**
-			 * Slides the named child in, coming in from the `left`, `right`, `top`, or `bottom`.
-			 * This function changes the state of the controller, so if the current child has to slide out, call `slideOut` first.
-			 */
-			slideIn: function (name, from) {
-				var controller = this._children[name]
-				var x, y, z
-				if (from === 'right') {
-					x = '100%'
-					y = '0%'
-					z = 1
-				} else if (from === 'left') {
-					x = '-' + this.translateOut + '%'
-					y = '0%'
-					z = 0
-				} else if (from === 'bottom') {
-					x = '0%'
-					y = '100%'
-					z = 1
-				} else if (from === 'top') {
-					x = '0%'
-					y = '-' + this.translateOut + '%'
-					z = 0
-				}
-				this.currentChild.pane.style.zIndex = z === 1 ? 0 : 1
-				controller.pane.style.zIndex = z
-				controller.pane.style.transitionDuration = '0s'
-				controller.pane.style.transform = 'translate(' + x + ', ' + y + ')'
-				controller.pane.style.visibility = null
-				this._currentName = name
-				requestAnimationFrame(function () {
-					controller.pane.style.transitionDuration = null
-					controller.pane.style.transform = 'translate(0, 0)'
-				})
-			},
-			/**
-			 * Slides the current child to the `left`, `right`, `top`, or `bottom`.
-			 */
-			slideOut: function (to) {
-				var controller = this.currentChild
-				var x, y
-				if (to === 'right') {
-					x = '100%'
-					y = '0%'
-				} else if (to === 'left') {
-					x = '-' + this.translateOut + '%'
-					y = '0%'
-				} else if (to === 'bottom') {
-					x = '0%'
-					y = '100%'
-				} else if (to === 'top') {
-					x = '0%'
-					y = '-' + this.translateOut + '%'
-				}
-				controller.pane.style.transform = 'translate(' + x + ', ' + y + ')'
-			}
-		})
-
-		return BrowseController
-	})()
-
-	// BONES OBJECT
-
-	var Bones = {
-		/**
-		 * Builds a controller tree.
-		 *
-		 * descriptor		a hash containing the definition for the controller, or a controller instance created previously
-		 *
-		 * Properties (all are optional):
-		 * pane				the DOM node for this controller
-		 * children			descriptors for child controllers
-		 * on				declares event listeners for framework events
-		 * observe			declares event listeners for DOM events
-		 * functions		defines functions to be attached to the controller
-		 */
-		build: function (descriptor) {
-			if (Object.getPrototypeOf(descriptor) !== Object.prototype) {
-				// Assume this is a controller instance.
-				return descriptor
-			}
-			// Use the pane on the descriptor or create one.
-			var pane = descriptor.pane || this.createPane()
-			// Use the constructor specified by the descriptor, or use the constructor based on whether and how children are defined.
-			var constructor = descriptor.hasOwnProperty('constructor') ? descriptor.constructor :
-				!descriptor.children ? Controller :
-				Array.isArray(descriptor.children) ? StackController :
-				BrowseController
-			var controller = new constructor(pane, descriptor)
-
-			if (descriptor.children) {
-				if (Array.isArray(descriptor.children)) {
-					descriptor.children.forEach(function (descriptor) {
-						controller.append(Bones.build(descriptor))
-					})
-				} else {
-					Object.keys(descriptor.children).forEach(function (name) {
-						controller.add(Bones.build(descriptor.children[name]), name)
-					})
-				}
-			}
-
-			if (descriptor.on) {
-				Object.keys(descriptor.on).forEach(function (type) {
-					controller.on(type, descriptor.on[type])
-				})
-			}
-
-			if (descriptor.functions) {
-				Object.keys(descriptor.functions).forEach(function (name) {
-					controller[name] = descriptor.functions[name]
-				})
-			}
-
-			// Override render to add event hooks.
-			controller.render = (function (render) {
-				return function () {
-					// The render event can be cancelled.
-					if (this.trigger('beforerender')) {
-						render.call(controller)
-						this.trigger('afterrender')
-					}
-				}
-			})(controller.render)
-
-			if (descriptor.observe) {
-				var observe = Object.keys(descriptor.observe).map(function (event) {
-					var space = (event + ' ').indexOf(' ')
-					var selector = event.substring(space + 1).trim()
-					var type = event.substring(0, space)
-					var handler = descriptor.observe[event]
-					var listener = typeof handler === 'string' ? controller[handler].bind(controller) :
-						typeof handler === 'function' ? handler.bind(controller) :
-						handler
-					return {event: event, type: type, selector: selector, listener: listener}
-				})
-
-				// After rendering or removal, remove event listeners.
-				controller.on('afterrender remove', function () {
-					observe.forEach(function (info) {
-						if (info.nodes) {
-							info.nodes.forEach(function (node) {
-								node.removeEventListener(info.type, info.listener)
-							})
-							delete info.nodes
-						}
-					})
-				})
-
-				// After rendering (and after the above listener), add event listeners.
-				controller.on('afterrender', function () {
-					observe.forEach(function (info) {
-						info.nodes = info.selector ? Array.prototype.slice.call(this.pane.querySelectorAll(info.selector)) : [this.pane]
-						info.nodes.forEach(function (node) {
-							node.addEventListener(info.type, info.listener)
-						})
-					}, this)
-				})
-			}
-
-			// If the pane is inserted or removed from the DOM, trigger corresponding framework events.
-			// These events trickle down to all descendants.
-			pane.addEventListener('bones:insert', function () {
-				controller.trigger('insert', {trickles: true, bubbles: false, cancelable: false})
-			})
-			pane.addEventListener('bones:remove', function () {
-				controller.trigger('remove', {trickles: true, bubbles: false, cancelable: false})
-			})
-
-			return controller
-		},
-		/**
-		 * Creates a DOM node for a new pane.
-		 */
-		createPane: function () {
-			var pane = document.createElement('div')
-			pane.classList.add('pane')
-			return pane
-		},
-		/**
-		 * Returns whether the given node is a pane node.
-		 */
-		isPane: function (node) {
-			return node.classList.contains('pane')
-		},
-		/**
-		 * Selects all pane nodes that are a descendant of the given node.
-		 */
-		selectPanes: function (node) {
-			return node.getElementsByClassName('pane')
-		},
-		/**
-		 * The number of pixels a swipe has to cover before it is interpreted as a page transition.
-		 */
-		threshold: 80,
-		/**
-		 * The percentage the current pane is translated when the next pane slides in.
-		 * At 100%, the current pane is pushed by the next pane. At lower percentages, the next pane slides over
-		 * the current pane.
-		 */
-		translateOut: 25,
-		/**
-		 * The constant that sets the strength of the spring that pulls the first or last pane back when swiped.
-		 * This only has effect if the overflow property of the controller is set to 'spring'.
-		 */
-		springConstant: 0.25,
-		/**
-		 * Enables swiping between children for the controller. This function is primarily targeted at `StackController`
-		 * instances, but any controller that implements the iterator functions and properties (`hasNext`, `next`, `currentChild`, etc.)
-		 * is supported in principle.
-		 */
-		enableSwiping: function (controller) {
+		function enableSwiping(controller) {
 			var pane = controller.pane
 			var horizontal = controller.orientation === 'horizontal'
 			var transform = horizontal ? 'translateX' : 'translateY'
@@ -818,11 +341,401 @@
 				}
 				resetState()
 			})
+		}
+
+		/**
+		 * Lets the next or previous pane of the controller slide in, and lets the current pane slide out.
+		 * Returns a promise that is resolved when the slide is complete.
+		 */
+		function slide(controller, next) {
+			return new Promise(function (resolve) {
+				var transform = controller.orientation === 'horizontal' ? 'translateX' : 'translateY'
+
+				// The state of the controller has already changed. The current child is the one that is going to slide in.
+				var slidingIn = controller.currentChild
+				var slidingOut // The child that was active previously, but now is going to slide out.
+				slidingIn.pane.style.transform = transform + '(0)'
+
+				// If we moved to the next child, then the controller should have a previous child, and the other way around.
+				if (next) {
+					slidingOut = controller.previousChild
+					// Slide to the left or top.
+					slidingOut.pane.style.transform = transform + '(-' + controller.translateOut + '%)'
+				} else {
+					slidingOut = controller.nextChild
+					// Slide to the right or bottom.
+					slidingOut.pane.style.transform = transform + '(100%)'
+				}
+
+				// Trigger events:
+				// 1. Trigger the `beforeslide` event on the controller:
+				controller.trigger('beforeslide', {detail: {next: next}, cancelable: false, bubbles: false, trickles: false})
+
+				// 2. Trigger the `beforeslideout` event on the child sliding out:
+				slidingOut.trigger('beforeslideout', {cancelable: false, bubbles: true, trickles: true})
+
+				// 3. Trigger the `beforeslidein` event on the child sliding in:
+				slidingIn.trigger('beforeslidein', {cancelable: false, bubbles: true, trickles: true})
+
+				slidingOut.pane.addEventListener('transitionend', function translateOut(e) {
+					if (e.propertyName === 'transform') {
+						// 4a. Trigger the `afterslideout` event.
+						slidingOut.trigger('afterslideout', {cancelable: false, bubbles: true, trickles: true})
+						e.target.removeEventListener('transitionend', translateOut)
+					}
+				})
+
+				slidingIn.pane.addEventListener('transitionend', function translateIn(e) {
+					if (e.propertyName === 'transform') {
+						// 4b. Trigger the `afterslidein` event.
+						slidingIn.trigger('afterslidein', {cancelable: false, bubbles: true, trickles: true})
+
+						// 4c. Finally, when the current child's animation is complete, notify the (parent) controller.
+						controller.trigger('afterslide', {detail: {next: next}, cancelable: false, bubbles: false, trickles: false})
+						e.target.removeEventListener('transitionend', translateIn)
+						resolve()
+					}
+				})
+			})
+		}
+
+		/**
+		 * (Re-)positions the children of the controller.
+		 */
+		function arrange(controller) {
+			var transform = controller.orientation === 'horizontal' ? 'translateX' : 'translateY'
+			controller.children.forEach(function (child, index) {
+				if (index < controller.currentIndex) {
+					child.pane.style.transform = transform + '(-' + controller.translateOut + '%)'
+				} else if (index > controller.currentIndex) {
+					child.pane.style.transform = transform + '(100%)'
+				} else {
+					child.pane.style.transform = transform + '(0)'
+				}
+			})
+		}
+
+		/**
+		 * StackController constructor
+		 * Properties:
+		 * - swipe: boolean, if true, enables swiping between children
+		 * - overflow: string, defines what happens if the user swipes past the first or last child.
+		 * - translateOut: number, defines the number of pixels a child pane slides out (default: Bones.translateOut).
+		 * - threshold: number, defines the number of pixels the user must swipe before a slide is triggered (default: Bones.threshold).
+		 *
+		 * The overflow property can be one of the following: `spring`, `propagate`, or `none`.
+		 * - `spring`: mimicks a spring attached to the pane, so that it lags behind the swipe gesture
+		 * - `propagate`: lets the parent handle the swipe gesture
+		 * - `none`: ignores the swipe gesture
+		 */
+		function StackController(pane, properties) {
+			Bones.Controller.call(this, pane, properties)
+			this._children = []
+			this._orientation = properties.orientation || 'horizontal'
+			this._swipe = properties.swipe || false
+			this._overflow = properties.overflow || 'spring' // What to do if the user swipes past the first or last pane? 'spring', 'propagate' or 'none'
+			this._translateOut = properties.translateOut === undefined ? Bones.translateOut : properties.translateOut
+			this._threshold = properties.threshold === undefined ? Bones.threshold : properties.threshold
+			this._currentIndex = 0
+			if (this._swipe) {
+				enableSwiping(this)
+			}
+		}
+		StackController.prototype = Object.create(Controller.prototype)
+		StackController.prototype.constructor = StackController
+
+		/**
+		 * Defines the properties on the given prototype.
+		 */
+		function extend(prototype, properties) {
+			Object.keys(properties).forEach(function (name) {
+				Object.defineProperty(prototype, name, Object.getOwnPropertyDescriptor(properties, name))
+			})
+		}
+
+		extend(StackController.prototype, {
+			/**
+			 * Returns the children collection.
+			 */
+			get children() {
+				return this._children
+			},
+			get count() {
+				return this.children.length
+			},
+			get swipe() {
+				return this._swipe
+			},
+			get orientation() {
+				return this._orientation
+			},
+			get overflow() {
+				return this._overflow
+			},
+			get threshold() {
+				return this._threshold
+			},
+			get translateOut() {
+				return this._translateOut
+			},
+			get currentIndex() {
+				return this._currentIndex
+			},
+			get currentChild() {
+				return this.children[this.currentIndex]
+			},
+			get nextChild() {
+				return this.children[this.currentIndex + 1]
+			},
+			get previousChild() {
+				return this.children[this.currentIndex - 1]
+			},
+			/**
+			 * Appends the controller to the end of the stack.
+			 */
+			append: function (controller) {
+				controller.parent = this
+				this.pane.appendChild(controller.pane)
+				this._children.push(controller)
+				arrange(this)
+			},
+			/**
+			 * Prepends the controller to the stack.
+			 */
+			prepend: function (controller) {
+				if (!this.children.length) {
+					this.append(controller)
+				} else {
+					controller.parent = this
+					this.pane.insertBefore(controller.pane, this.children[0].pane)
+					this._children.unshift(controller)
+					this._currentIndex += 1
+					arrange(this)
+				}
+			},
+			remove: function (child) {
+				var index = this._children.indexOf(child)
+				if (index > -1) {
+					this._children.splice(index, 1)
+					this.pane.removeChild(child.pane)
+					arrange(this)
+				}
+			},
+			/**
+			 * Moves to the next child.
+			 * Returns a promise that is fulfilled after the sliding animation is complete.
+			 */
+			next: function () {
+				if (this.hasNext && this.trigger('next')) {
+					this._currentIndex += 1
+					return slide(this, true)
+				}
+				return Promise.reject()
+			},
+			get hasNext() {
+				return this._currentIndex < this.children.length - 1
+			},
+			/**
+			 * Moves to the previous child.
+			 * Returns a promise that is fulfilled after the sliding animation is complete.
+			 */
+			previous: function () {
+				if (this.hasPrevious && this.trigger('previous')) {
+					this._currentIndex -= 1
+					return slide(this, false)
+				}
+				return Promise.reject()
+			},
+			get hasPrevious() {
+				return this._currentIndex > 0
+			},
+			/**
+			 * Navigates to the first child and returns a promise that is fulfilled when that child has finished sliding in.
+			 * Intermediate children are sliding in and out as well, so all events are fired for those children.
+			 */
+			first: function () {
+				var promise
+				if (this.hasPrevious) {
+					do {
+						promise = this.previous()
+					} while (this.hasPrevious)
+					return promise
+				} else {
+					return Promise.resolved()
+				}
+			},
+			/**
+			 * Navigates to the last child and returns a promise that is fulfilled when that child has finished sliding in.
+			 * Intermediate children are sliding in and out as well, so all events are fired for those children.
+			 */
+			last: function () {
+				var promise
+				if (this.hasNext) {
+					do {
+						promise = this.next()
+					} while (this.hasNext)
+					return promise
+				} else {
+					return Promise.resolved()
+				}
+			},
+			render: function () {
+				this.children.forEach(function (child) {
+					child.render()
+				})
+			}
+		})
+
+		return StackController
+	})()
+
+	// BONES OBJECT
+
+	var Bones = {
+		/**
+		 * Builds a controller tree.
+		 *
+		 * descriptor		a hash containing the definition for the controller, or a controller instance created previously
+		 *
+		 * Properties (all are optional):
+		 * pane				the DOM node for this controller
+		 * children			descriptors for child controllers
+		 * on				declares event listeners for framework events
+		 * observe			declares event listeners for DOM events
+		 * functions		defines functions to be attached to the controller
+		 */
+		build: function (descriptor) {
+			if (Object.getPrototypeOf(descriptor) !== Object.prototype) {
+				// Assume this is a controller instance.
+				return descriptor
+			}
+			// Use the pane on the descriptor or create one.
+			var pane = descriptor.pane || this.createPane()
+			// Use the constructor specified by the descriptor, or use the constructor based on whether and how children are defined.
+			var constructor = descriptor.hasOwnProperty('constructor') ? descriptor.constructor :
+				!descriptor.children ? Controller :
+				Array.isArray(descriptor.children) ? StackController :
+				BrowseController
+			var controller = new constructor(pane, descriptor)
+
+			if (descriptor.children) {
+				if (Array.isArray(descriptor.children)) {
+					descriptor.children.forEach(function (descriptor) {
+						controller.append(Bones.build(descriptor))
+					})
+				} else {
+					Object.keys(descriptor.children).forEach(function (name) {
+						controller.add(Bones.build(descriptor.children[name]), name)
+					})
+				}
+			}
+
+			if (descriptor.on) {
+				Object.keys(descriptor.on).forEach(function (type) {
+					controller.on(type, descriptor.on[type])
+				})
+			}
+
+			if (descriptor.functions) {
+				Object.keys(descriptor.functions).forEach(function (name) {
+					controller[name] = descriptor.functions[name]
+				})
+			}
+
+			// Override render to add event hooks.
+			controller.render = (function (render) {
+				return function () {
+					// The render event can be cancelled.
+					if (this.trigger('beforerender')) {
+						render.call(controller)
+						this.trigger('afterrender')
+					}
+				}
+			})(controller.render)
+
+			if (descriptor.observe) {
+				var observe = Object.keys(descriptor.observe).map(function (event) {
+					var space = (event + ' ').indexOf(' ')
+					var selector = event.substring(space + 1).trim()
+					var type = event.substring(0, space)
+					var handler = descriptor.observe[event]
+					var listener = typeof handler === 'string' ? controller[handler].bind(controller) :
+						typeof handler === 'function' ? handler.bind(controller) :
+						handler
+					return {event: event, type: type, selector: selector, listener: listener}
+				})
+
+				// After rendering or removal, remove event listeners.
+				controller.on('afterrender remove', function () {
+					observe.forEach(function (info) {
+						if (info.nodes) {
+							info.nodes.forEach(function (node) {
+								node.removeEventListener(info.type, info.listener)
+							})
+							delete info.nodes
+						}
+					})
+				})
+
+				// After rendering (and after the above listener), add event listeners.
+				controller.on('afterrender', function () {
+					observe.forEach(function (info) {
+						info.nodes = info.selector ? Array.prototype.slice.call(this.pane.querySelectorAll(info.selector)) : [this.pane]
+						info.nodes.forEach(function (node) {
+							node.addEventListener(info.type, info.listener)
+						})
+					}, this)
+				})
+			}
+
+			// If the pane is inserted or removed from the DOM, trigger corresponding framework events.
+			// These events trickle down to all descendants.
+			pane.addEventListener('bones:insert', function () {
+				controller.trigger('insert', {trickles: true, bubbles: false, cancelable: false})
+			})
+			pane.addEventListener('bones:remove', function () {
+				controller.trigger('remove', {trickles: true, bubbles: false, cancelable: false})
+			})
+			return controller
 		},
+		/**
+		 * Creates a DOM node for a new pane.
+		 */
+		createPane: function () {
+			var pane = document.createElement('div')
+			pane.classList.add('pane')
+			return pane
+		},
+		/**
+		 * Returns whether the given node is a pane node.
+		 */
+		isPane: function (node) {
+			return node.classList.contains('pane')
+		},
+		/**
+		 * Selects all pane nodes that are a descendant of the given node.
+		 */
+		selectPanes: function (node) {
+			return node.getElementsByClassName('pane')
+		},
+		/**
+		 * The number of pixels a swipe has to cover before it is interpreted as a page transition.
+		 */
+		threshold: 80,
+		/**
+		 * The percentage the current pane is translated when the next pane slides in.
+		 * At 100%, the current pane is pushed by the next pane. At lower percentages, the next pane slides over
+		 * the current pane.
+		 */
+		translateOut: 25,
+		/**
+		 * The constant that sets the strength of the spring that pulls the first or last pane back when swiped.
+		 * This only has effect if the overflow property of the controller is set to 'spring'.
+		 */
+		springConstant: 0.25,
 
 		Controller: Controller,
-		StackController: StackController,
-		BrowseController: BrowseController
+		StackController: StackController
 	}
 
 	return Bones
