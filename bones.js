@@ -29,78 +29,9 @@
 	})
 	observer.observe(document, {childList: true, subtree: true})
 
-	// CONTROLLER IMPLEMENTATIONS
-	/**
-	 * Controller
-	 * This controller only implements framework event handling.
-	 */
+	// CONTROLLER IMPLEMENTATION
+
 	var Controller = (function () {
-		/**
-		 * Controller constructor
-		 * pane 		DOM node
-		 * properties	hash containing any properties applicable to this controller
-		 *
-		 * This controller does not require any properties.
-		 */
-		function Controller(pane, properties) {
-			this._pane = pane
-			this._parent = null
-			this._listeners = {}
-		}
-		Controller.prototype = {
-			get pane() {
-				return this._pane
-			},
-			get parent() {
-				return this._parent
-			},
-			set parent(parent) {
-				this._parent = parent
-			},
-			/**
-			 * Adds an event listener for the event of the given type(s).
-			 * The type argument can be a space delimited list of event types.
-			 */
-			on: function (type, listener) {
-				type.split(' ').forEach(function (type) {
-					var listeners = this._listeners[type]
-					if (!listeners) {
-						listeners = this._listeners[type] = []
-					}
-					if (listeners.indexOf(listener) === -1) {
-						listeners.push(listener)
-					}
-				}, this)
-			},
-			/**
-			 * Removes an event listener for the event of the given type(s).
-			 * The type argument can be a space delimited list of event types.
-			 */
-			off: function (type, listener) {
-				type.split(' ').forEach(function (type) {
-					var listeners = this._listeners[type]
-					if (listeners) {
-						var index = listeners.indexOf(listener)
-						if (index > -1) {
-							listeners.splice(index, 1)
-						}
-					}
-				}, this)
-			},
-			/**
-			 * Triggers the event of the given type on the controller.
-			 * Returns true if `preventDefault()` was not called on the event.
-			 */
-			trigger: function (type, options) {
-				var event = new Event(type, this, options)
-				handleEvent(this, event)
-				return !event.defaultPrevented
-			},
-			/**
-			 * Generates the contents of the pane and inserts it into the pane element.
-			 */
-			render: function () {}
-		}
 
 		/**
 		 * Event constructor
@@ -205,14 +136,6 @@
 			}
 		}
 
-		return Controller
-	})()
-
-	/**
-	 * StackController
-	 * The stack controller has an array of child controllers (the stack) that is swiped through in order.
-	 */
-	var StackController = (function () {
 		/**
 		 * Enables swiping between children for the controller.
 		 */
@@ -416,11 +339,14 @@
 		}
 
 		/**
-		 * StackController constructor
-		 * Properties:
+		 * Controller constructor
+		 * pane 		DOM node
+		 * properties	hash containing any properties applicable to this controller
+		 *
+		 * The following properties are defined by default:
 		 * - swipe: boolean, if true, enables swiping between children
 		 * - overflow: string, defines what happens if the user swipes past the first or last child.
-		 * - translateOut: number, defines the number of pixels a child pane slides out (default: Bones.translateOut).
+		 * - translateOut: number, defines the percentage of its width a child pane slides out (default: Bones.translateOut).
 		 * - threshold: number, defines the number of pixels the user must swipe before a slide is triggered (default: Bones.threshold).
 		 *
 		 * The overflow property can be one of the following: `spring`, `propagate`, or `none`.
@@ -428,13 +354,16 @@
 		 * - `propagate`: lets the parent handle the swipe gesture
 		 * - `none`: ignores the swipe gesture
 		 */
-		function StackController(pane, properties) {
-			Bones.Controller.call(this, pane, properties)
+		function Controller(pane, properties) {
+			this._pane = pane
+			this._parent = null
+			this._listeners = {}
+
 			this._children = []
 			this._namedChildren = {}
 			this._orientation = properties.orientation || 'horizontal'
 			this._swipe = properties.swipe || false
-			this._overflow = properties.overflow || 'spring' // What to do if the user swipes past the first or last pane? 'spring', 'propagate' or 'none'
+			this._overflow = properties.overflow || 'spring'
 			this._translateOut = properties.translateOut === undefined ? Bones.translateOut : properties.translateOut
 			this._threshold = properties.threshold === undefined ? Bones.threshold : properties.threshold
 			this._currentIndex = 0
@@ -442,26 +371,60 @@
 				enableSwiping(this)
 			}
 		}
-		StackController.prototype = Object.create(Controller.prototype)
-		StackController.prototype.constructor = StackController
-
-		/**
-		 * Defines the properties on the given prototype.
-		 */
-		function extend(prototype, properties) {
-			Object.keys(properties).forEach(function (name) {
-				Object.defineProperty(prototype, name, Object.getOwnPropertyDescriptor(properties, name))
-			})
-		}
-
-		extend(StackController.prototype, {
+		Controller.prototype = {
+			get pane() {
+				return this._pane
+			},
+			get parent() {
+				return this._parent
+			},
+			set parent(parent) {
+				this._parent = parent
+			},
 			/**
-			 * Returns the children collection.
+			 * Adds an event listener for the event of the given type(s).
+			 * The type argument can be a space delimited list of event types.
 			 */
+			on: function (type, listener) {
+				type.split(' ').forEach(function (type) {
+					var listeners = this._listeners[type]
+					if (!listeners) {
+						listeners = this._listeners[type] = []
+					}
+					if (listeners.indexOf(listener) === -1) {
+						listeners.push(listener)
+					}
+				}, this)
+			},
+			/**
+			 * Removes an event listener for the event of the given type(s).
+			 * The type argument can be a space delimited list of event types.
+			 */
+			off: function (type, listener) {
+				type.split(' ').forEach(function (type) {
+					var listeners = this._listeners[type]
+					if (listeners) {
+						var index = listeners.indexOf(listener)
+						if (index > -1) {
+							listeners.splice(index, 1)
+						}
+					}
+				}, this)
+			},
+			/**
+			 * Triggers the event of the given type on the controller.
+			 * Returns true if `preventDefault()` was not called on the event.
+			 */
+			trigger: function (type, options) {
+				var event = new Event(type, this, options)
+				handleEvent(this, event)
+				return !event.defaultPrevented
+			},
+
 			get children() {
 				return this._children
 			},
-			get count() {
+			get childCount() {
 				return this.children.length
 			},
 			get swipe() {
@@ -490,6 +453,18 @@
 			},
 			get previousChild() {
 				return this.children[this.currentIndex - 1]
+			},
+			get firstChild() {
+				return this.children[0]
+			},
+			get lastChild() {
+				return this.children[this.children.length - 1]
+			},
+			get index() {
+				if (!this.parent) {
+					return null
+				}
+				return this.parent.children.indexOf(this)
 			},
 			/**
 			 * Appends the controller to the end of the stack.
@@ -607,14 +582,18 @@
 					return Promise.resolved()
 				}
 			},
+			/**
+			 * Generates the contents of the pane and inserts it into the pane element.
+			 * This default implementation only calls render on the children.
+			 */
 			render: function () {
 				this.children.forEach(function (child) {
 					child.render()
 				})
 			}
-		})
+		}
 
-		return StackController
+		return Controller
 	})()
 
 	// BONES OBJECT
@@ -630,7 +609,7 @@
 		 * children			descriptors for child controllers
 		 * on				declares event listeners for framework events
 		 * observe			declares event listeners for DOM events
-		 * functions		defines functions to be attached to the controller
+		 * properties		defines properties to be attached to the controller
 		 */
 		build: function (descriptor) {
 			if (Object.getPrototypeOf(descriptor) !== Object.prototype) {
@@ -640,15 +619,12 @@
 			// Use the pane on the descriptor or create one.
 			var pane = descriptor.pane || this.createPane()
 			// Use the constructor specified by the descriptor, or use the constructor based on whether and how children are defined.
-			var constructor = descriptor.hasOwnProperty('constructor') ? descriptor.constructor :
-				!descriptor.children ? Controller :
-				Array.isArray(descriptor.children) ? StackController :
-				BrowseController
+			var constructor = descriptor.hasOwnProperty('constructor') ? descriptor.constructor : Controller
 			var controller = new constructor(pane, descriptor)
 
 			if (descriptor.children) {
 				descriptor.children.forEach(function (descriptor) {
-					controller.append(Bones.build(descriptor))
+					controller.append(Bones.build(descriptor), descriptor.name)
 				})
 			}
 
@@ -658,9 +634,9 @@
 				})
 			}
 
-			if (descriptor.functions) {
-				Object.keys(descriptor.functions).forEach(function (name) {
-					controller[name] = descriptor.functions[name]
+			if (descriptor.properties) {
+				Object.keys(descriptor.properties).forEach(function (name) {
+					Object.defineProperty(controller, name, Object.getOwnPropertyDescriptor(properties, name))
 				})
 			}
 
@@ -756,8 +732,7 @@
 		 */
 		springConstant: 0.25,
 
-		Controller: Controller,
-		StackController: StackController
+		Controller: Controller
 	}
 
 	return Bones
