@@ -40,6 +40,7 @@
 		 * Event constructor
 		 * type			the event type
 		 * controller	the event target
+		 * detail		additional data pertaining to the event
 		 * options		hash that sets properties of the event
 		 *
 		 * The event mechanism supports two types of propagation:
@@ -53,14 +54,14 @@
 		 * - trickles: boolean, whether the event trickles (default: false).
 		 * - cancelable: boolean, whether the default can be prevented (default: true).
 		 */
-		function Event(type, controller, options) {
+		function Event(type, controller, detail, options) {
 			var options = options || {}
 			this._type = type
 			this._controller = controller
 			this._bubbles = options.bubbles === undefined ? true : options.bubbles
 			this._trickles = options.trickles === undefined ? false : options.trickles
 			this._cancelable = options.cancelable === undefined ? true : options.cancelable
-			this._detail = options.detail
+			this._detail = detail
 			this._phase = Event.NONE
 			this._propagationStopped = !this._bubbles
 			this._defaultPrevented = false
@@ -107,7 +108,6 @@
 		 * for the different phases of event propagation.
 		 */
 		function handleEvent(controller, event) {
-			console.log(event.type)
 			if (event._phase <= Event.TRICKLING_PHASE) {
 				if (event._trickles) {
 					event._phase = Event.TRICKLING_PHASE
@@ -212,10 +212,10 @@
 			 * Triggers the event of the given type on the controller.
 			 * Returns true if `preventDefault()` was not called on the event.
 			 */
-			trigger: function (type, options) {
+			trigger: function (type, options, data) {
 				// Only start the event cycle if there is a listener for it.
 				if (listenerCounts[type]) {
-					var event = new Event(type, this, options)
+					var event = new Event(type, this, options, data)
 					handleEvent(this, event)
 					return !event.defaultPrevented
 				}
@@ -285,7 +285,7 @@
 					}
 					if (capture) {
 						// Capture was just set to true, so only now trigger the swipestart event.
-						controller.trigger('swipestart', {cancelable: false, detail: {x: x1, y: y1}})
+						controller.trigger('swipestart', {cancelable: false}, {x: x1, y: y1})
 						controller.currentChild.pane.style.transitionDuration = '0s'
 						if (controller.hasNext) {
 							controller.nextChild.pane.style.transitionDuration = '0s'
@@ -330,7 +330,7 @@
 								currentPane.style.transform = transform + '(' + translation + '%)'
 							}
 						}
-						controller.trigger('swipemove', {cancelable: false, detail: {distance: distance}})
+						controller.trigger('swipemove', {cancelable: false}, {distance: distance})
 					}
 				}
 			})
@@ -347,10 +347,10 @@
 					var distance = horizontal ? x2 - x1 : y2 - y1
 					if (Math.abs(distance) > controller.threshold) {
 						if (distance < 0 && controller.hasNext) {
-							controller.trigger('swipeend', {cancelable: false, detail: {distance: distance}})
+							controller.trigger('swipeend', {cancelable: false}, {distance: distance})
 							controller.next()
 						} else if (distance > 0 && controller.hasPrevious) {
-							controller.trigger('swipeend', {cancelable: false, detail: {distance: distance}})
+							controller.trigger('swipeend', {cancelable: false}, {distance: distance})
 							controller.previous()
 						} else {
 							// Distance is 0, or there was no next/previous child. Undo whatever movement was made.
@@ -391,7 +391,7 @@
 
 				// Trigger events:
 				// 1. Trigger the `beforeslide` event on the controller:
-				controller.trigger('beforeslide', {detail: {next: next}, cancelable: false, bubbles: false, trickles: false})
+				controller.trigger('beforeslide', {cancelable: false, bubbles: false, trickles: false}, {next: next})
 
 				// 2. Trigger the `beforeslideout` event on the child sliding out:
 				slidingOut.trigger('beforeslideout', {cancelable: false, bubbles: true, trickles: true})
@@ -413,7 +413,7 @@
 						slidingIn.trigger('afterslidein', {cancelable: false, bubbles: true, trickles: true})
 
 						// 4c. Finally, when the current child's animation is complete, notify the (parent) controller.
-						controller.trigger('afterslide', {detail: {next: next}, cancelable: false, bubbles: false, trickles: false})
+						controller.trigger('afterslide', {cancelable: false, bubbles: false, trickles: false}, {next: next})
 						e.target.removeEventListener('transitionend', translateIn)
 						resolve()
 					}
@@ -658,6 +658,7 @@
 		 * descriptor		a hash containing the definition for the controller, or a controller instance created previously
 		 *
 		 * Properties (all are optional):
+		 * constructor		the controller constructor
 		 * pane				the DOM node for this controller
 		 * children			descriptors for child controllers
 		 * on				declares event listeners for framework events
