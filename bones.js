@@ -29,9 +29,12 @@
 	})
 	observer.observe(document, {childList: true, subtree: true})
 
-	// CONTROLLER IMPLEMENTATION
+	// CONTROLLER IMPLEMENTATIONS
 
-	var Controller = (function () {
+	/**
+	 * The LeafController is a controller that has no children, and implements event binding and propagation.
+	 */
+	var LeafController = (function () {
 
 		/**
 		 * Event constructor
@@ -98,11 +101,13 @@
 				return this._defaultPrevented
 			}
 		}
+
 		/**
 		 * Calls the event handlers attached to the controller, and traverses the controller tree
 		 * for the different phases of event propagation.
 		 */
 		function handleEvent(controller, event) {
+			console.log(event.type)
 			if (event._phase <= Event.TRICKLING_PHASE) {
 				if (event._trickles) {
 					event._phase = Event.TRICKLING_PHASE
@@ -136,6 +141,100 @@
 			}
 		}
 
+		var listenerCounts = {} // Global list of events where at least one listener is registered to.
+
+		/**
+		 * LeafController constructor
+		 * pane 		DOM node
+		 * properties	hash containing any properties applicable to this controller
+		 *
+		 * This controller does not define any properties by default.
+		 */
+		function LeafController(pane, properties) {
+			this._pane = pane
+			this._parent = null
+			this._listeners = {}
+		}
+		LeafController.prototype = {
+			get pane() {
+				return this._pane
+			},
+			get parent() {
+				return this._parent
+			},
+			set parent(parent) {
+				this._parent = parent
+			},
+			get index() {
+				if (!this.parent) {
+					return null
+				}
+				return this.parent.children.indexOf(this)
+			},
+			/**
+			 * Adds an event listener for the event of the given type(s).
+			 * The type argument can be a space delimited list of event types.
+			 */
+			on: function (type, listener) {
+				type.split(' ').forEach(function (type) {
+					var listeners = this._listeners[type]
+					if (!listeners) {
+						listeners = this._listeners[type] = []
+					}
+					if (listeners.indexOf(listener) === -1) {
+						listeners.push(listener)
+						if (!listenerCounts[type]) {
+							listenerCounts[type] = 0
+						}
+						listenerCounts[type] += 1
+					}
+				}, this)
+			},
+			/**
+			 * Removes an event listener for the event of the given type(s).
+			 * The type argument can be a space delimited list of event types.
+			 */
+			off: function (type, listener) {
+				type.split(' ').forEach(function (type) {
+					var listeners = this._listeners[type]
+					if (listeners) {
+						var index = listeners.indexOf(listener)
+						if (index > -1) {
+							listeners.splice(index, 1)
+							if (listenerCounts[type]) {
+								listenerCounts[type] -= 1
+							}
+						}
+					}
+				}, this)
+			},
+			/**
+			 * Triggers the event of the given type on the controller.
+			 * Returns true if `preventDefault()` was not called on the event.
+			 */
+			trigger: function (type, options) {
+				// Only start the event cycle if there is a listener for it.
+				if (listenerCounts[type]) {
+					var event = new Event(type, this, options)
+					handleEvent(this, event)
+					return !event.defaultPrevented
+				}
+
+				return true
+			},
+			/**
+			 * Generates the contents of the pane and inserts it into the pane element.
+			 */
+			render: function () {}
+		}
+
+		return LeafController
+	})()
+
+	/**
+	 * The CompositeController defines the child relationship and implements swiping between children.
+	 */
+	var CompositeController = (function () {
 		/**
 		 * Enables swiping between children for the controller.
 		 */
@@ -267,7 +366,7 @@
 		}
 
 		/**
-		 * Lets the next or previous pane of the controller slide in, and lets the current pane slide out.
+		 * Lets the next or previous child of the controller slide in, and lets the current pane slide out.
 		 * Returns a promise that is resolved when the slide is complete.
 		 */
 		function slide(controller, next) {
@@ -339,7 +438,16 @@
 		}
 
 		/**
-		 * Controller constructor
+		 * Defines the properties on the given prototype.
+		 */
+		function extend(prototype, properties) {
+			Object.keys(properties).forEach(function (name) {
+				Object.defineProperty(prototype, name, Object.getOwnPropertyDescriptor(properties, name))
+			})
+		}
+
+		/**
+		 * CompositeController constructor
 		 * pane 		DOM node
 		 * properties	hash containing any properties applicable to this controller
 		 *
@@ -354,10 +462,8 @@
 		 * - `propagate`: lets the parent handle the swipe gesture
 		 * - `none`: ignores the swipe gesture
 		 */
-		function Controller(pane, properties) {
-			this._pane = pane
-			this._parent = null
-			this._listeners = {}
+		function CompositeController(pane, properties) {
+			LeafController.call(this, pane, properties)
 
 			this._children = []
 			this._namedChildren = {}
@@ -371,56 +477,9 @@
 				enableSwiping(this)
 			}
 		}
-		Controller.prototype = {
-			get pane() {
-				return this._pane
-			},
-			get parent() {
-				return this._parent
-			},
-			set parent(parent) {
-				this._parent = parent
-			},
-			/**
-			 * Adds an event listener for the event of the given type(s).
-			 * The type argument can be a space delimited list of event types.
-			 */
-			on: function (type, listener) {
-				type.split(' ').forEach(function (type) {
-					var listeners = this._listeners[type]
-					if (!listeners) {
-						listeners = this._listeners[type] = []
-					}
-					if (listeners.indexOf(listener) === -1) {
-						listeners.push(listener)
-					}
-				}, this)
-			},
-			/**
-			 * Removes an event listener for the event of the given type(s).
-			 * The type argument can be a space delimited list of event types.
-			 */
-			off: function (type, listener) {
-				type.split(' ').forEach(function (type) {
-					var listeners = this._listeners[type]
-					if (listeners) {
-						var index = listeners.indexOf(listener)
-						if (index > -1) {
-							listeners.splice(index, 1)
-						}
-					}
-				}, this)
-			},
-			/**
-			 * Triggers the event of the given type on the controller.
-			 * Returns true if `preventDefault()` was not called on the event.
-			 */
-			trigger: function (type, options) {
-				var event = new Event(type, this, options)
-				handleEvent(this, event)
-				return !event.defaultPrevented
-			},
-
+		CompositeController.prototype = Object.create(LeafController.prototype)
+		CompositeController.prototype.constructor = CompositeController
+		extend(CompositeController.prototype, {
 			get children() {
 				return this._children
 			},
@@ -459,12 +518,6 @@
 			},
 			get lastChild() {
 				return this.children[this.children.length - 1]
-			},
-			get index() {
-				if (!this.parent) {
-					return null
-				}
-				return this.parent.children.indexOf(this)
 			},
 			/**
 			 * Appends the controller to the end of the stack.
@@ -591,9 +644,9 @@
 					child.render()
 				})
 			}
-		}
+		})
 
-		return Controller
+		return CompositeController
 	})()
 
 	// BONES OBJECT
@@ -609,7 +662,7 @@
 		 * children			descriptors for child controllers
 		 * on				declares event listeners for framework events
 		 * observe			declares event listeners for DOM events
-		 * properties		defines properties to be attached to the controller
+		 * extend			defines properties to be attached to the controller
 		 */
 		build: function (descriptor) {
 			if (Object.getPrototypeOf(descriptor) !== Object.prototype) {
@@ -619,7 +672,8 @@
 			// Use the pane on the descriptor or create one.
 			var pane = descriptor.pane || this.createPane()
 			// Use the constructor specified by the descriptor, or use the constructor based on whether and how children are defined.
-			var constructor = descriptor.hasOwnProperty('constructor') ? descriptor.constructor : Controller
+			var constructor = descriptor.hasOwnProperty('constructor') ? descriptor.constructor :
+				descriptor.children ? CompositeController : LeafController
 			var controller = new constructor(pane, descriptor)
 
 			if (descriptor.children) {
@@ -634,22 +688,24 @@
 				})
 			}
 
-			if (descriptor.properties) {
-				Object.keys(descriptor.properties).forEach(function (name) {
-					Object.defineProperty(controller, name, Object.getOwnPropertyDescriptor(properties, name))
+			if (descriptor.extend) {
+				Object.keys(descriptor.extend).forEach(function (name) {
+					Object.defineProperty(controller, name, Object.getOwnPropertyDescriptor(descriptor.extend, name))
 				})
 			}
 
 			// Override render to add event hooks.
-			controller.render = (function (render) {
-				return function () {
-					// The render event can be cancelled.
-					if (this.trigger('beforerender')) {
-						render.call(controller)
-						this.trigger('afterrender')
+			if (!controller.hasOwnProperty('render') || Object.getOwnPropertyDescriptor(controller, 'render').configurable) {
+				controller.render = (function (render) {
+					return function () {
+						// The render event can be cancelled.
+						if (this.trigger('beforerender')) {
+							render.call(controller)
+							this.trigger('afterrender')
+						}
 					}
-				}
-			})(controller.render)
+				})(controller.render)
+			}
 
 			if (descriptor.observe) {
 				var observe = Object.keys(descriptor.observe).map(function (event) {
@@ -732,7 +788,8 @@
 		 */
 		springConstant: 0.25,
 
-		Controller: Controller
+		Controller: LeafController,
+		CompositeController: CompositeController
 	}
 
 	return Bones
