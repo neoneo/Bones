@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+		<title>Bones example</title>
+		<style>
+			/*
+				Recommended styles for html, body and panes.
+			*/
+			html, body {
+				width: 100%;
+				height: 100%;
+				margin: 0;
+				padding: 0;
+				overflow: hidden;
+			}
+			.pane {
+				position: absolute;
+				width: 100%;
+				height: 100%;
+				top: 0;
+				left: 0;
+				overflow: hidden;
+				transition: transform 0.2s cubic-bezier(0, 0.7, 1, 1);
+			}
+
+			/*
+				Styles just for this example.
+			*/
+			.pane {
+				background-color: #fff;
+			}
+			.content {
+				margin: 10px;
+				padding: 10px;
+				border-radius: 8px;
+				background-color: #f0f0f0;
+				font-family: sans-serif;
+			}
+			button {
+				background-color: #090;
+				font-family: sans-serif;
+				font-size: 1em;
+				height: 2em;
+				color: #fff;
+				border: none;
+				border-radius: 4px;
+			}
+			#next {
+				float: right;
+				visibility: hidden;
+			}
+			#previous {
+				float: left;
+				visibility: hidden;
+			}
+			header {
+				padding: 10px;
+			}
+			section.container {
+				position: absolute;
+				top: calc(2em + 20px);
+				bottom: calc(1em + 30px);
+				width: 100%;
+			}
+			section.container .content {
+				margin-top: 0;
+				margin-bottom: 0;
+			}
+			footer {
+				position: absolute;
+				bottom: 0;
+				width: 100%;
+				text-align: center;
+				background-color: #f6f6f6;
+				color: #ccc;
+				font-family: sans-serif;
+				padding: 10px 0;
+			}
+		</style>
+		<script src="../bones.js"></script>
+		<script src="controllers.js"></script>
+		<script src="http://cdn.jsdelivr.net/handlebarsjs/4.0.5/handlebars.min.js"></script>
+		<script>
+			// Overwrite default Bones settings.
+			Bones.translateOut = 30;
+			Bones.springConstant = 0.15;
+
+			document.addEventListener('DOMContentLoaded', function () {
+				// Compile Handlebars templates.
+				var templates = {}
+				var nodes = document.querySelectorAll('script[type="text/x-handlebars-template"]')
+				Array.prototype.forEach.call(nodes, function (node) {
+					templates[node.id] = Handlebars.compile(node.innerHTML)
+				})
+				// Implement the render function on TemplateController (see controllers.js).
+				TemplateController.prototype.render = function () {
+					this.pane.innerHTML = templates[this.template](this.data)
+				}
+
+				// We build the whole controller tree in one go. This is feasible for simple cases.
+				var root = Bones.build({
+					swipe: false,
+					children: [
+						{
+							name: 'splash',
+							constructor: TemplateController,
+							template: 'splash',
+							data: {},
+							observe: {
+								touchend: function () {
+									this.trigger('splash:tap')
+								}
+							}
+						},
+						{
+							name: 'content',
+							constructor: ContainerController,
+							template: 'container',
+							container: '.container',
+							swipe: true,
+							orientation: 'horizontal',
+							children: [
+								{
+									constructor: TemplateController,
+									template: 'horizontal',
+									data: {
+										number: 1,
+										vertical: false
+									}
+								},
+								{
+									swipe: true,
+									orientation: 'vertical',
+									children: [
+										{
+											constructor: TemplateController,
+											template: 'horizontal',
+											data: {
+												number: 2,
+												vertical: true
+											}
+										},
+										{
+											constructor: TemplateController,
+											template: 'vertical',
+											data: {
+												number: 2,
+												vertical: true
+											}
+										},
+										{
+											constructor: TemplateController,
+											template: 'vertical',
+											data: {
+												number: 3,
+												vertical: true
+											}
+										}
+									]
+								},
+								{
+									constructor: TemplateController,
+									template: 'horizontal',
+									data: {
+										number: 3,
+										vertical: false
+									}
+								}
+							],
+							observe: {
+								// DOM events, Backbone style definition. The handlers are bound to the controller.
+								'touchend #next': function (event) {
+									this.next()
+								},
+								'touchend #previous': function (event) {
+									this.previous()
+								}
+							},
+							on: {
+								// Bones events
+								afterrender: function (event) {
+									if (this.hasNext) {
+										this.pane.querySelector('#next').style.visibility = 'inherit'
+									}
+								},
+								afterslideout: function (event) {
+									// Go to the first pane.
+									if (this.currentIndex > 0) {
+										this.first()
+									}
+								},
+								afterslide: function (event) {
+									this.pane.querySelector('#next').style.visibility = this.hasNext ? 'inherit' : 'hidden'
+									this.pane.querySelector('#previous').style.visibility = this.hasPrevious ? 'inherit' : 'hidden'
+								}
+							}
+						}
+					],
+					on: {
+						'splash:tap': function (event) {
+							this.moveTo('content')
+						}
+					},
+					observe: {
+						'touchend button.home': function (event) {
+							this.moveTo('splash')
+						}
+					}
+				})
+				// Render the root. This will call render recursively.
+				root.render()
+				document.body.appendChild(root.pane)
+			})
+		</script>
+	</head>
+	<body>
+		<script id="splash" type="text/x-handlebars-template">
+			<div class="content">
+				<h1>Welcome to Bones!</h1>
+				<p>
+					Bones is a Javascript library for easy page transitions in single page apps.
+				</p>
+				<p>
+					This example uses Handlebars as a template library. Any template library can be used however.<br>
+					jQuery is intentionally not used. DOM event listeners added by Bones, as well as Bones' own events,
+					are bound to the owning controller, similar to jQuery's binding to the DOM element. To prevent any
+					confusion to arise from this similarity, it seemed better to forgo the use of jQuery in this example.
+				</p>
+				<p>
+					Please modify this example!<br>
+					Tap anywhere to continue.
+				</p>
+			</div>
+		</script>
+		<script id="container" type="text/x-handlebars-template">
+			<header>
+				<button id="previous">Previous</button>
+				<button id="next">Next</button>
+			</header>
+			<section class="container"></section>
+			<footer>
+				Bones example
+			</footer>
+		</script>
+		<script id="horizontal" type="text/x-handlebars-template">
+			<div class="content">
+				<h1>Horizontal swiping</h1>
+				<p>
+					This is pane {{number}} of 3. You can swipe horizontally or use the buttons above.
+				</p>
+				{{#if vertical}}
+				<p>
+					You can also swipe vertically (1 of 3).
+				</p>
+				{{/if}}
+				<button class="home">Home</button>
+			</div>
+		</script>
+		<script id="vertical" type="text/x-handlebars-template">
+			<div class="content">
+				<h1>Vertical swiping</h1>
+				<p>
+					This is pane {{number}} of 3. You can swipe vertically.
+				</p>
+				<p>
+					You can still swipe horizontally.
+				</p>
+			</div>
+		</script>
+	</body>
+</html>
