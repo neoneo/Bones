@@ -44,12 +44,12 @@
 		 * options		hash that sets properties of the event
 		 *
 		 * The event mechanism supports two types of propagation:
-		 * - bubbling: the event bubbles up to ancestor controllers, analogous to DOM events
+		 * - bubbling: the event bubbles up to ancestor controllers, analogous to DOM events.
 		 * - trickling: the event trickles down to all descendant controllers.
 		 * If enabled, event propagation starts with the trickling phase, followed by the bubbling phase.
 		 * During the trickling phase, calls to `stopPropagation` and `preventDefault` have no effect.
 		 *
-		 * The options has may contain the following keys:
+		 * The options hash may contain the following keys:
 		 * - bubbles: boolean, whether the event bubbles (default: true).
 		 * - trickles: boolean, whether the event trickles (default: false).
 		 * - cancelable: boolean, whether the default can be prevented (default: true).
@@ -617,7 +617,7 @@
 					} while (this.hasPrevious)
 					return promise
 				} else {
-					return Promise.resolved()
+					return Promise.resolve()
 				}
 			},
 			/**
@@ -632,7 +632,7 @@
 					} while (this.hasNext)
 					return promise
 				} else {
-					return Promise.resolved()
+					return Promise.resolve()
 				}
 			},
 			/**

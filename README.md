@@ -15,11 +15,11 @@ The included example app should give a good idea of how that works. It
 also includes some extensions which might prove useful, at least as a
 starting point.
 
-Bones comes with two controller types: `Bones.Controller` and
+Bones comes with two controller types: `Bones.LeafController` and
 `Bones.CompositeController`. `Bones.CompositeController`'s sole purpose is
 to be able to build a tree of controllers. The leaves of the tree are the
 interesting parts of your app (the parts that actually display something), and
-are represented by `Bones.Controller` instances.
+are represented by `Bones.LeafController` instances.
 
 Descriptors
 -----------
@@ -29,7 +29,7 @@ optional, some have default values as indicated.
 
 property        | description
 ----------------|--------------------------------------------------------------------------------
-constructor 	| the controller constructor (`Bones.Controller` or `Bones.CompositeController`)
+constructor 	| the controller constructor (`Bones.LeafController` or `Bones.CompositeController`)
 pane			| the DOM node of the pane (`Bones.createPane()`)
 children		| an array of child descriptors
 on				| declares event listeners for framework events
